@@ -1,4 +1,6 @@
-# SMU COX ITOM 6265 Final Group Project[^1]
+# SMU COX ITOM 6265 Final Group Project [^1]
+![image](https://github.com/user-attachments/assets/b1b82263-001b-4165-9d2d-60dd7452d94a)
+
 >  The most difficult thing is the decision to act, the rest is merely tenacity[^2]
 
 ## Login Page
