@@ -1,5 +1,8 @@
 # Database Design for Business Final Group Project[^1]
->  The most difficult thing is the decision to act, the rest is merely tenacity
+>  The most difficult thing is the decision to act, the rest is merely tenacity[^2]
+
+## Login Page
+![image](https://github.com/user-attachments/assets/4d098f2b-33ac-4bb3-93eb-a9d5245d578d)
 ## Home Page
 ![image](https://github.com/user-attachments/assets/40e9925c-3602-41f2-aea7-2c39b50a407e)
 ## Artists Gallery
@@ -19,4 +22,5 @@
 ## SQL Chat
 ![image](https://github.com/user-attachments/assets/a0d710ea-4bb8-4dc9-ba70-be9f6540a273)
 
-[^1]: I would like to give special thanks to other contributors of this final project: Ire Olagbami, Vikram Singh and Yashu Pericherla
+[^1]: I would like to give special thanks to other contributors of this final project: Ire Olagbami, Vikram Singh and Yashu Pericherla.
+[^2]: From Amelia Mary Earhart (July 24, 1897 - January 5, 1939), American aviation pioneer.
