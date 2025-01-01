@@ -8,11 +8,8 @@ library(shinyjs)
 library(reticulate)
 library(bslib)
 library(shinyvalidate)
-
-
 # Create virtual environment
 virtualenv_create("sqlchat")
-
 # Install Python packages
 virtualenv_install(
   "sqlchat",
@@ -26,9 +23,7 @@ virtualenv_install(
     "mysql-connector-python"
   )
 )
-
 use_virtualenv("sqlchat", required = TRUE)
-
 # Python Code for SQLChat
 py_run_string(sprintf("
 import os
@@ -37,34 +32,26 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-
 # Define database connection parameters
-user = 'host'
+user = '%s'
 password = '%s'
 host = '%s'
 port = 3306
-database = 'DFW_Live_Music_Venue_Booking'
-
+database = '%s'
 # Connection string for MySQL
 mysql_uri = f'mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}'
-
 # Create SQLDatabase object using the URI
 db = SQLDatabase.from_uri(mysql_uri)
-
 api_key = '%s'
 llm = ChatOpenAI(model='gpt-4o', api_key=api_key)
-
 # Define LangChain SQL generation and execution pipelines
 def generate_sql(question):
     template = '''Based on the table schema below, write a SQL query that would answer the user's question:
     {schema}
-
     Write only the SQL query and nothing else. Do not wrap the SQL query in any other text, not even backticks.
     Remove ```sql\n and \n```
-
     Question: {question}
     SQL Query:'''
-
     prompt = ChatPromptTemplate.from_template(template)
     sql_chain = (
         RunnablePassthrough.assign(schema=lambda _: db.get_table_info())
@@ -73,21 +60,16 @@ def generate_sql(question):
         | StrOutputParser()
     )
     return sql_chain.invoke({'question': question})
-
 def full_chain_response(question):
     sql_query = generate_sql(question)
     sql_response = db.run(sql_query)
-
     full_template = '''Based on the table schema below, question, sql query, and sql response, write a natural language response:
     {schema}
-
     Write only the SQL query and nothing else. Do not wrap the SQL query in any other text, not even backticks.
     Remove ```sql\n and \n```
-
     Question: {question}
     SQL Query: {query}
     SQL Response: {response}'''
-
     prompt_response = ChatPromptTemplate.from_template(full_template)
     full_chain = (
         RunnablePassthrough.assign(query=lambda _: sql_query)
@@ -97,9 +79,7 @@ def full_chain_response(question):
         | StrOutputParser()
     )
     return {'query': sql_query, 'response': sql_response}
-
-", Sys.getenv("PASSWORD"), Sys.getenv("HOST"), Sys.getenv("API_KEY")))
-
+", Sys.getenv("USER"), Sys.getenv("PASSWORD"), Sys.getenv("HOST"), Sys.getenv("DATABASE"), Sys.getenv("API_KEY")))
 # UI
 ui <- dashboardPage(
   dark = TRUE,
@@ -172,7 +152,6 @@ ui <- dashboardPage(
       )
     )
   ),
-
   # Body for main content
   dashboardBody(
     useShinyjs(),
@@ -200,7 +179,6 @@ ui <- dashboardPage(
             background = "purple",
             status = "purple",
             solidHeader = TRUE,
-            textInput("talent", "Talent Name", placeholder = "Enter the Name of the talent"),
             numericInput("venue_id", "Venue ID", value = 0, min = 1),
             numericInput("artist_id", "Artist ID", value = 0, min = 1),
             dateInput("date", "Booking Date", min = Sys.Date()),
@@ -245,6 +223,7 @@ ui <- dashboardPage(
                   "search_genre",
                   "Genre",
                   choices = c(
+                    "",
                     "Jazz",
                     "Pop",
                     "Rock",
@@ -255,7 +234,8 @@ ui <- dashboardPage(
                     "Folk",
                     "Electronic",
                     "Reggaeton"
-                  )
+                  ),
+                  selected = ""
                 ),
                 checkboxInput("search_independent", "Is Independent", FALSE),
                 actionButton("search_artists_btn", "Search"),
@@ -508,7 +488,6 @@ ui <- dashboardPage(
     )
   )
 )
-
 # Server
 server <- function(input, output, session) {
   # Reactive value for login status
@@ -521,26 +500,23 @@ server <- function(input, output, session) {
     "new_username",
     sv_regex(
       "^[a-zA-Z0-9_]{8,20}$",
-      "Username must be 8-20 characters long, using only letters, numbers, and underscores"
+      "Invalid Username"
     )
   )
-
   iv$add_rule(
     "new_password",
     sv_regex(
       "^[a-zA-Z0-9#?!@$%^&*-]{8,}$",
-      "Password must be at least 8 characters with uppercase, lowercase, number, and special character"
+      "Invalid Password"
     )
   )
-
   iv$add_rule(
     "new_fullname",
     sv_regex(
-      "^[a-zA-Z\\s]{8,}$",
-      "Full name must be at least 8 characters long, using only letters and spaces"
+      "^[a-zA-Z ]{8,}$",
+      "Invalid Full Name"
     )
   )
-
   iv$add_rule(
     "new_email",
     sv_regex(
@@ -548,12 +524,10 @@ server <- function(input, output, session) {
       "Invalid email address"
     )
   )
-
   iv$add_rule(
     "new_phone",
-    sv_regex("^\\+1-\\d{3}-\\d{3}-\\d{4}$", "Invalid phone number")
+    sv_regex("^\\+\\d{1,3}-\\d{3}-\\d{3}-\\d{4}$", "Invalid phone number")
   )
-
   # Ensure all fields are filled
   iv$add_rule("new_username", sv_required())
   iv$add_rule("new_password", sv_required())
@@ -561,7 +535,6 @@ server <- function(input, output, session) {
   iv$add_rule("new_email", sv_required())
   iv$add_rule("new_phone", sv_required())
   iv$enable()
-
   notifications <- reactiveVal(list(
     notificationItem(
       inputId = "login_notification",
@@ -569,7 +542,17 @@ server <- function(input, output, session) {
       status = "warning"
     )
   ))
-
+  # function to start a connection to the DATABASE
+  connect <- function() {
+    database <- dbConnect(
+      RMySQL::MySQL(),
+      dbname = Sys.getenv("DATABASE"),
+      host = Sys.getenv("HOST"),
+      user = Sys.getenv("USER"),
+      password = Sys.getenv("PASSWORD")
+    )
+    return(database)
+  }
   output$notification <- renderMenu({
     dropdownMenu(
       badgeStatus = "info",
@@ -618,7 +601,6 @@ server <- function(input, output, session) {
       )
     )
   })
-
   output$user <- renderUser({
     dashboardUser(
       name = "Unauthorized User",
@@ -629,20 +611,14 @@ server <- function(input, output, session) {
   })
   # Check login credentials
   observeEvent(input$login_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query <- sprintf(
       "SELECT * FROM User WHERE username = '%s' AND password = '%s'",
       input$username,
       input$password
     )
     res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     if (nrow(res) == 1) {
       new_notification <- notificationItem(
         text = paste("User signed in at", format(Sys.time(), "%H:%M:%S")),
@@ -745,39 +721,25 @@ server <- function(input, output, session) {
       })
     } else {
       new_notification <- notificationItem(
-        text = "Invalid User Name or Password",
+        text = "Invalid Username or Password",
         status = "danger",
         icon = icon("times-circle")
       )
       notifications(c(notifications(), list(new_notification)))
-      showNotification("Invalid User Name or Password", type = "error")
+      showNotification("Invalid Username or Password", type = "error")
     }
   })
   output$loggedIn <- reactive({
     logged_in()
   })
   outputOptions(output, "loggedIn", suspendWhenHidden = FALSE)
-  # Implement Sign Up Features
+  # Pop up modal for sign up
   observeEvent(input$signup_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
-    query <- sprintf(
-      "SELECT * FROM User WHERE username = '%s' AND password = '%s'",
-      input$username,
-      input$password
-    )
-    res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     showModal(
       modalDialog(
         title = "Fill Your Information to Sign Up",
         easyClose = TRUE,
-        textInput("new_username", "User Name", placeholder = "Input Your User Name"),
+        textInput("new_username", "Username", placeholder = "Input Your Username"),
         passwordInput("new_password", "Password", placeholder = "Input Your Password"),
         textInput("new_fullname", "Full Name", placeholder = "Input Your Full Legal Name"),
         selectInput(
@@ -811,13 +773,8 @@ server <- function(input, output, session) {
       )
       notifications(c(notifications(), list(new_notification)))
     } else {
-      db <- dbConnect(
-        RMySQL::MySQL(),
-        dbname = "DFW_Live_Music_Venue_Booking",
-        host = Sys.getenv("HOST"),
-        user = "host",
-        password = Sys.getenv("PASSWORD")
-      )
+      db <- connect()
+      on.exit(dbDisconnect(db), add = TRUE)
       query <- sprintf(
         "INSERT INTO User (username, password, full_name, title,email,phone) VALUES ('%s','%s','%s','%s','%s','%s');",
         input$new_username,
@@ -834,22 +791,15 @@ server <- function(input, output, session) {
       )
       notifications(c(notifications(), list(new_notification)))
       dbExecute(db, query)
-      on.exit(dbDisconnect(db), add = TRUE)
       showNotification("You have successfully signed up!", type = "message")
     }
   })
   # Create the Artist Gallery
   output$artists <- renderUI({
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query <- "SELECT * FROM Artist"
     res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     artists <- lapply(1:nrow(res), function(i) {
       column(
         width = 3,
@@ -891,26 +841,19 @@ server <- function(input, output, session) {
   })
   # Create Booking
   observeEvent(input$create_booking_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
+    name <- dbGetQuery(db, paste("SELECT name FROM Artist WHERE artist_id =", input$artist_id))["name"]
     query <- sprintf(
       "INSERT INTO Booking (user_id, talent, venue_id, date ,status ,artist_id) VALUES ('%s','%s','%s','%s','%s','%s');",
       current_user(),
-      input$talent,
+      name,
       input$venue_id,
       input$date,
       "booked",
       input$artist_id
     )
-
-
     res <- dbExecute(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     new_notification <- notificationItem(
       text = paste(
         sprintf("New Booking is Created at"),
@@ -922,33 +865,21 @@ server <- function(input, output, session) {
     notifications(c(notifications(), list(new_notification)))
     showNotification("Your New Booking is Created Successfully!", type = "message")
   })
-
   # Read/Search Bookings
   observeEvent(input$search_artists_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query <- sprintf(
       "SELECT * FROM Artist WHERE genre LIKE '%%%s%%' AND is_independent = '%s'",
       input$search_genre,
       as.numeric(input$search_independent)
     )
     res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     output$result_table <- renderDataTable(res, options = list(scrollX = TRUE))
   })
   observeEvent(input$search_venues_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query <- sprintf(
       "SELECT * FROM Venue WHERE capacity BETWEEN '%s' AND '%s' AND pricing BETWEEN '%s' AND '%s'",
       input$search_capacity[[1]],
@@ -957,19 +888,12 @@ server <- function(input, output, session) {
       input$search_pricing[[2]]
     )
     res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     output$result_table <- renderDataTable(res, options = list(scrollX = TRUE))
   })
-
   # Search existing bookings
   observeEvent(input$search_bookings_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query <- sprintf(
       "SELECT * FROM Booking WHERE status = 'booked' AND date BETWEEN '%s' AND '%s' AND talent LIKE '%%%s%%' AND user_id = %s",
       input$search_date[[1]],
@@ -978,22 +902,16 @@ server <- function(input, output, session) {
       current_user()
     )
     res <- dbGetQuery(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     output$result_table <- renderDataTable(res, options = list(scrollX = TRUE))
   })
-
-
   # Update Existing Booking
   observeEvent(input$update_booking_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
+    name <- dbGetQuery(db, paste("SELECT name FROM Artist WHERE artist_id =", input$update_artist_id))["name"]
     query <- sprintf(
-      "UPDATE Booking SET venue_id = %s,artist_id = %s,date = '%s' WHERE booking_id = %s AND user_id = %s",
+      "UPDATE Booking SET talent = '%s', venue_id = %s,artist_id = %s,date = '%s' WHERE booking_id = %s AND user_id = %s",
+      name,
       input$update_venue_id,
       input$update_artist_id,
       input$update_date,
@@ -1001,7 +919,6 @@ server <- function(input, output, session) {
       current_user()
     )
     dbExecute(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     new_notification <- notificationItem(
       text = paste("Updated Booking at", format(Sys.time(), "%H:%M:%S")),
       status = "success",
@@ -1010,16 +927,10 @@ server <- function(input, output, session) {
     notifications(c(notifications(), list(new_notification)))
     showNotification("Booking updated successfully!", type = "message")
   })
-
   # Delete Booking and Users
   observeEvent(input$delete_bookings_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     if (is.na(input$delete_booking_id)) {
       query <- sprintf("DELETE FROM Booking WHERE user_id = %s", current_user())
     } else {
@@ -1030,7 +941,6 @@ server <- function(input, output, session) {
       )
     }
     dbExecute(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     new_notification <- notificationItem(
       text = paste("Deleted Booking at", format(Sys.time(), "%H:%M:%S")),
       status = "success",
@@ -1041,20 +951,13 @@ server <- function(input, output, session) {
   })
   # Server side code for SQL Chat
   observeEvent(input$generate_sql, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
     on.exit(dbDisconnect(db), add = TRUE)
     question <- input$question
     response <- py$full_chain_response(question)
     # Extract SQL query and results
     generated_sql <- response$query
     query_results <- response$response
-
     # Display SQL and results
     output$generated_sql <- renderText({
       paste(generated_sql)
@@ -1062,8 +965,6 @@ server <- function(input, output, session) {
     output$generated_results <- renderText({
       paste("Generated results:\n", query_results)
     })
-
-    print(generated_sql)
     # Submit the fetch query and disconnect
     data <- dbGetQuery(db, generated_sql)
     # display 10 rows initially
@@ -1073,40 +974,27 @@ server <- function(input, output, session) {
   })
   # Delete User Profile and Its Bookings from the database
   observeEvent(input$delete_user_btn, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
+    on.exit(dbDisconnect(db), add = TRUE)
     query_booking <- sprintf("DELETE FROM Booking WHERE user_id = %s", current_user())
     query <- sprintf("DELETE FROM User WHERE user_id = %s", current_user())
     dbExecute(db, query_booking)
     dbExecute(db, query)
-    on.exit(dbDisconnect(db), add = TRUE)
     refresh()
   })
-
   observeEvent(input$logout, {
     refresh()
   })
   # Display Map for Analytics
   observeEvent(input$view_map, {
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
     on.exit(dbDisconnect(db), add = TRUE)
     query <- sprintf(
-      "SELECT DISTINCT name,latitude,longitude,address,metropolitan,status,capacity,pricing FROM Booking JOIN Venue USING(venue_id)"
+      "SELECT DISTINCT name,latitude,longitude,address,metropolitan,capacity,pricing FROM Booking JOIN Venue USING(venue_id)"
     )
     data <- dbGetQuery(db, query)
     query_booked <- sprintf(
-      "SELECT DISTINCT name,latitude,longitude,address,metropolitan,status,capacity,pricing,user_id,booking_id FROM Booking JOIN Venue USING(venue_id) WHERE status='booked' AND date = '%s' ;",
+      "SELECT DISTINCT name,latitude,longitude,address,metropolitan,capacity,pricing,user_id,booking_id FROM Booking JOIN Venue USING(venue_id) WHERE status='booked' AND date = '%s';",
       input$venue_date
     )
     data_booked <- dbGetQuery(db, query_booked)
@@ -1126,9 +1014,6 @@ server <- function(input, output, session) {
             "<br>",
             "<b>Metropolitan:</b>",
             metropolitan,
-            "<br>",
-            "<b>Status:</b>",
-            status,
             "<br>",
             "<b>Capacity:</b>",
             capacity,
@@ -1153,9 +1038,6 @@ server <- function(input, output, session) {
             "<b>Metropolitan:</b>",
             metropolitan,
             "<br>",
-            "<b>Status:</b>",
-            status,
-            "<br>",
             "<b>Capacity:</b>",
             capacity,
             "<br>",
@@ -1173,16 +1055,9 @@ server <- function(input, output, session) {
         )
     })
   })
-
   # Interactive Artist Popularity Plot
   output$artist_plot <- renderPlotly({
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
     on.exit(dbDisconnect(db), add = TRUE)
     popularity <- dbGetQuery(
       db,
@@ -1197,20 +1072,11 @@ server <- function(input, output, session) {
       theme_minimal() +
       coord_flip() +
       labs(title = "Artist Popularity", x = "Artist Name", y = "Number of Bookings")
-
     ggplotly(ggplot_obj) # Make the plot interactive
   })
-
-
   # Interactive Venue Popularity Plot
   output$venue_plot <- renderPlotly({
-    db <- dbConnect(
-      RMySQL::MySQL(),
-      dbname = "DFW_Live_Music_Venue_Booking",
-      host = Sys.getenv("HOST"),
-      user = "host",
-      password = Sys.getenv("PASSWORD")
-    )
+    db <- connect()
     on.exit(dbDisconnect(db), add = TRUE)
     popularity <- dbGetQuery(
       db,
@@ -1225,10 +1091,8 @@ server <- function(input, output, session) {
       theme_minimal() +
       coord_flip() +
       labs(title = "Venue Popularity", x = "Venue Name", y = "Number of Bookings")
-
     ggplotly(ggplot_obj) # Make the plot interactive
   })
 }
-
 # Run the app
 shinyApp(ui, server)
